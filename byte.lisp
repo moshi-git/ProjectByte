@@ -1,9 +1,12 @@
+;; Common Lisp documentation is really helpfull
+
 (defstruct game
   size ; 8x8 or 10x10
   ; instead of using array for faster access
   ; only lists will be used for the purpose of this project
   ; square access via function "nth" (index = row * square + column)
-  board ; state format ( (X/O) ; X - black, O - white, also determines who can move the stack
+  board ; state format ( (row, column) index
+        ;                (X/O) X - black, O - white, also determines who can move the stack
         ;                (list representing elements (characters X and O) that make up the stack on the current square (if it has no elements it represents an empty square)))
         ;                ;; first element on board stack eq first element in list stack
   player ; X - player with black pieces on the move (also represents the player playing first), O - player with white pieces
@@ -20,8 +23,6 @@
 (defconstant *stack-size* 8)
 
 (defconstant *list-size* 3)
-
-(defconstant *list-square-size* 2)
 
 (defconstant *standard-size* 8)
 
@@ -70,16 +71,16 @@
 
 ;; recursively fill first row then second ...
 (defun make-game-board (row column size game)
-  (reverse (make-inversed-game-board row column size game)))
+  (setf (game-board game) (reverse (make-inversed-game-board row column size game))))
 
 (defun make-inversed-game-board (row column size game)
   (cond ((= row size) (game-board game))
     ((= column size) (make-game-board (1+ row) 0 size game))
-    (t (insert-square game (make-square (if (even-sum row column) 'X 'O) '())) (make-game-board row (1+ column) size game))))
+    (t (insert-square game (make-square row column (if (even-sum row column) 'X 'O) (if (and (> row 0) (< row (1- *stack-size*)) (even-sum row column)) (if (= 0 (mod row 2)) '(O) '(X)) '()))) (make-game-board row (1+ column) size game))))
 
 ;; make square
-(defun make-square (black-or-white stack)
-  (list black-or-white stack))
+(defun make-square (row column black-or-white stack)
+  (list (list row column) black-or-white stack))
 
 ;; insert new square in current board then update
 (defun insert-square (game square)
@@ -108,7 +109,7 @@
 (defun display-squares-matrix (row column board size result-matrix)
   (cond ((= row size) (reverse result-matrix))
         ((= column size) (display-squares-matrix (1+ row) 0 board size result-matrix))
-        (t (display-squares-matrix row (1+ column) (rest board) size (if (even-sum row column) (cons (display-square-matrix 0 0 *list-size* (nth (1- *list-square-size*) (first board))) result-matrix) (cons (get-blank-square) result-matrix))))))
+        (t (display-squares-matrix row (1+ column) (rest board) size (if (even-sum row column) (cons (display-square-matrix 0 0 *list-size* (nth (1- *list-size*) (first board))) result-matrix) (cons (get-blank-square) result-matrix))))))
 
 (defun get-blank-square ()
   (list '(" " " " " ") '(" " " " " ") '(" " " " " ")))
@@ -162,3 +163,24 @@
 
 (defun check-index (row column size)
   (if (and (>= row 0) (< row size)) (and (>= column 0) (< column size)) nil))
+
+(defun sort-nearest (a b)
+  (< (first (rest a)) (first (rest b))))
+
+(defun find-distance (row column size result-list dest-row dest-column game)
+  (cond ((= row size) (filter-nearest (sort result-list #'sort-nearest)))
+        ((= column size) (find-distance (1+ row) 0 size result-list dest-row dest-column game))
+        ((or (and (= row dest-row) (= column dest-column)) (null (nth (1- *list-size*) (nth (+ (* row size) column) (game-board game)))) ) (find-distance row (if (= 0 (mod row 2)) (+ column 2) (1+ column)) size result-list dest-row dest-column game))
+        (t (find-distance row (if (= 0 (mod row 2)) (+ column 2) (1+ column)) size (cons (list (list row column) (calc-distance row column dest-row dest-column)) result-list) dest-row dest-column game))))
+
+(defun calc-distance (row column dest-row dest-column)
+  (max (abs (- row dest-row)) (abs (- column dest-column))))
+
+(defun filter-nearest (elements)
+  (let ((minimum (first (rest (first elements)))))
+    (remove-if-not (lambda (element) (<= (first (rest element)) minimum)) elements)))
+
+(defun check-if-move-is-close-to-nearest-stack (row column nearest-stacks)
+    (cond ((null nearest-stacks) '())
+    (t (let ((element (first nearest-stacks)))
+         (if (<= (calc-distance row column (first (first element)) (first (rest (first element)))) (first (rest element))) t (check-if-move-is-close-to-nearest-stack row column (rest nearest-stacks)))))))
