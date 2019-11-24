@@ -193,7 +193,7 @@
         (destination-stack-size (length destination-stack)))
     (cond ((null current-stack) '())
       ((or (< height 0) (> height current-stack-size)) '())
-      ((not (equal (nth height current-stack) current-player)) (format t "~a " (nth height current-stack)) '())
+      ((not (equal (nth height current-stack) current-player)) '())
       ((null destination-stack) t)
       ((>= height destination-stack-size) '())
       ((> (+ (- current-stack-size height) destination-stack-size) *stack-size*) '())
@@ -205,7 +205,7 @@
     ((not (or (= (length move) *list-size*) (= (length move) (1- *list-size*)))) '())
     ((not (parse-row-column-list (first move))) '())
     ((not (parse-row-column-list (first (rest move)))) '())
-    ((= (length move) *list-size*) (characterp (first (rest (rest move)))))
+    ((= (length move) *list-size*) (numberp (first (rest (rest move)))))
     (t t)))
 
 (defun parse-row-column-list (elements)
@@ -242,7 +242,7 @@
     (dest-column (1- (first (rest (first (rest move))))))
     (height (if (= (length move) *list-size*) (first (rest (rest move))) 0)))
     (cond ((not (check-move row column dest-row dest-column (game-size game) (game-board game) (game-player game) height)) '())
-    (t (play-move row column dest-row dest-column (game-board game) (game-size game) height)))))
+    (t (play-move row column dest-row dest-column (game-board game) (game-size game) height) t))))
 
 ;; for now it directly changes the state of the board
 (defun play-move (row column dest-row dest-column board size height)
@@ -250,10 +250,13 @@
    (setf (nth (1- *list-size*) (nth (+ (* dest-row size) dest-column) board)) (if (null destination-stack) (cons (subseq current-stack height) destination-stack) (append destination-stack (subseq current-stack height))))
    (setf (nth (1- *list-size*) (nth (+ (* row size) column) board)) (delete-if (constantly t) current-stack :count (- (length current-stack) height) :from-end t))))
 
+(defun make-a-move-loop (game)
+  (if (null (make-a-move game)) (progn (format t "Invalid move! Try again!~%") (make-a-move-loop game)) t))
+
 ;; will be used to controll the course of the game
 ;; for now it allows only one move to be played and then exits
 (defun game-controller (game)
-  (make-a-move game)
+  (make-a-move-loop game)
   (display-game-board (game-board game) (game-size game))
   (display-game-over (game-points-x game) (game-points-o game))
   ;;(if (check-if-game-over (game)) (display-game-over (game-points-x game) (game-points-o game)) (game-controller game))
