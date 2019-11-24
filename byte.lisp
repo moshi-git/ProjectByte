@@ -1,5 +1,8 @@
 ;; Common Lisp documentation is really helpfull
 
+;; forbidden use of car and cdr
+;; use first and rest instead
+
 (defstruct game
   size ; 8x8 or 10x10
   ; instead of using array for faster access
@@ -66,25 +69,22 @@
 
 (defparameter *byte-game* (game-constructor)) ; defparameter assigns again after reloading file
 
+;; call this to start the game
 (defun main ()
-       (progn (init-game *byte-game*) (make-game-board 0 0 (game-size *byte-game*) *byte-game*)) (display-game-board (game-board *byte-game*) (game-size *byte-game*)))
+       (init-game *byte-game*) (make-game-board 0 0 (game-size *byte-game*) *byte-game*) (display-game-board (game-board *byte-game*) (game-size *byte-game*)) (game-controller *byte-game*))
 
 ;; recursively fill first row then second ...
 (defun make-game-board (row column size game)
-  (setf (game-board game) (reverse (make-inversed-game-board row column size game))))
+  (setf (game-board game) (reverse (make-inversed-game-board row column size '()))))
 
-(defun make-inversed-game-board (row column size game)
-  (cond ((= row size) (game-board game))
-    ((= column size) (make-game-board (1+ row) 0 size game))
-    (t (insert-square game (make-square row column (if (even-sum row column) 'X 'O) (if (and (> row 0) (< row (1- *stack-size*)) (even-sum row column)) (if (= 0 (mod row 2)) '(O) '(X)) '()))) (make-game-board row (1+ column) size game))))
+(defun make-inversed-game-board (row column size board)
+  (cond ((= row size) board)
+    ((= column size) (make-inversed-game-board (1+ row) 0 size board))
+    (t (make-inversed-game-board row (1+ column) size (cons (make-square row column (if (even-sum row column) 'X 'O) (if (and (> row 0) (< row (1- *stack-size*)) (even-sum row column)) (if (= 0 (mod row 2)) '(O) '(X)) '())) board)))))
 
 ;; make square
 (defun make-square (row column black-or-white stack)
   (list (list row column) black-or-white stack))
-
-;; insert new square in current board then update
-(defun insert-square (game square)
-  (setf (game-board game) (cons square (game-board game))))
 
 (defun even-sum (row column)
   (if (= 0 (mod (+ row column) 2)) t nil))
@@ -93,18 +93,21 @@
   (format t "    ")
   (display-columns size 0)
   (format t "~% ")
-  (display 0 0 0 board size 0))
+  (display board size))
 
 (defun display-columns (size index)
   (cond ((= index size) nil)
         (t (format t "~a     " (1+ index)) (display-columns size (1+ index)))))
 
-(defun display (row column inner-index board size repeat-count)
-  (let ((matrix (display-squares-matrix 0 0 board size '())))
-    (cond ((= row size) "")
-    ((= column size) (format t "~%") (if (= repeat-count 0) (format t "~a" (row-index-to-char row)) (format t " ")) (display row 0 (1+ inner-index) matrix size (1+ repeat-count)))
-    ((= repeat-count *list-size*)  (display (1+ row) 0 0 matrix size 0))
-    (t (format t " ~{~a~^ ~}" (nth inner-index (nth (+ (* row size) column) matrix))) (display row (1+ column) inner-index matrix size repeat-count)))))
+(defun display (board size)
+ (let ((matrix (display-squares-matrix 0 0 board size '())))
+  (display-helper 0 0 0 matrix size 0)))
+
+(defun display-helper (row column inner-index matrix size repeat-count)
+    (cond ((= row size) (format t "~%"))
+    ((= column size) (format t "~%") (if (= repeat-count 0) (format t "~a" (row-index-to-char row)) (format t " ")) (display-helper row 0 (1+ inner-index) matrix size (1+ repeat-count)))
+    ((= repeat-count *list-size*)  (display-helper (1+ row) 0 0 matrix size 0))
+    (t (format t " ~{~a~^ ~}" (nth inner-index (nth (+ (* row size) column) matrix))) (display-helper row (1+ column) inner-index matrix size repeat-count))))
 
 (defun display-squares-matrix (row column board size result-matrix)
   (cond ((= row size) (reverse result-matrix))
@@ -116,14 +119,14 @@
 
 ;; size x size
 (defun display-square-matrix (row column size stack)
-  (let ((num-elements (list-length stack)))
-    (display-square-matrix-helper row column size stack num-elements *stack-size* '() '())))
+    (display-square-matrix-helper row column size stack (list-length stack) 0 '() '() ))
 
 (defun display-square-matrix-helper (row column size stack stack-size index result-list inner-list)
-  (cond ((= row size) (reverse result-list))
-        ((= column size) (display-square-matrix-helper (1+ row) 0 size stack stack-size index (cons (reverse inner-list) result-list) '()))
-        ((< index stack-size) (display-square-matrix-helper row (1+ column) size (rest stack) stack-size (1- index) result-list (cons (first stack) inner-list)))
-        (t (display-square-matrix-helper row (1+ column) size stack stack-size (1- index) result-list (cons "." inner-list)))))
+  (cond ((= row size) result-list)
+        ((= column size) (display-square-matrix-helper (1+ row) 0 size stack stack-size index (cons inner-list result-list) '()))
+        ((>= index stack-size) (display-square-matrix-helper row (1+ column) size stack stack-size (1+ index) result-list (cons "." inner-list)))
+        (t (display-square-matrix-helper row (1+ column) size (rest stack) stack-size (1+ index) result-list (cons (first stack) inner-list)))))
+
 
 
 (defun char-to-row-index (char)
@@ -167,11 +170,11 @@
 (defun sort-nearest (a b)
   (< (first (rest a)) (first (rest b))))
 
-(defun find-distance (row column size result-list dest-row dest-column game)
+(defun find-distance (row column size result-list dest-row dest-column board)
   (cond ((= row size) (filter-nearest (sort result-list #'sort-nearest)))
-        ((= column size) (find-distance (1+ row) 0 size result-list dest-row dest-column game))
-        ((or (and (= row dest-row) (= column dest-column)) (null (nth (1- *list-size*) (nth (+ (* row size) column) (game-board game)))) ) (find-distance row (if (= 0 (mod row 2)) (+ column 2) (1+ column)) size result-list dest-row dest-column game))
-        (t (find-distance row (if (= 0 (mod row 2)) (+ column 2) (1+ column)) size (cons (list (list row column) (calc-distance row column dest-row dest-column)) result-list) dest-row dest-column game))))
+        ((= column size) (find-distance (1+ row) 0 size result-list dest-row dest-column board))
+        ((or (and (= row dest-row) (= column dest-column)) (null (nth (1- *list-size*) (nth (+ (* row size) column) board))) ) (find-distance row (if (= 0 (mod row 2)) (+ column 2) (1+ column)) size result-list dest-row dest-column board))
+        (t (find-distance row (if (= 0 (mod row 2)) (+ column 2) (1+ column)) size (cons (list (list row column) (calc-distance row column dest-row dest-column)) result-list) dest-row dest-column board))))
 
 (defun calc-distance (row column dest-row dest-column)
   (max (abs (- row dest-row)) (abs (- column dest-column))))
@@ -180,7 +183,81 @@
   (let ((minimum (first (rest (first elements)))))
     (remove-if-not (lambda (element) (<= (first (rest element)) minimum)) elements)))
 
-(defun check-if-move-is-close-to-nearest-stack (row column nearest-stacks)
+(defun check-if-move-leads-to-nearest-stack (row column nearest-stacks)
     (cond ((null nearest-stacks) '())
     (t (let ((element (first nearest-stacks)))
-         (if (<= (calc-distance row column (first (first element)) (first (rest (first element)))) (first (rest element))) t (check-if-move-is-close-to-nearest-stack row column (rest nearest-stacks)))))))
+         (if (<= (calc-distance row column (first (first element)) (first (rest (first element)))) (first (rest element))) t (check-if-move-leads-to-nearest-stack row column (rest nearest-stacks)))))))
+
+(defun check-stacks-move (current-stack destination-stack current-player height)
+  (let ((current-stack-size (length current-stack))
+        (destination-stack-size (length destination-stack)))
+    (cond ((null current-stack) '())
+      ((or (< height 0) (> height current-stack-size)) '())
+      ((not (equal (nth height current-stack) current-player)) (format t "~a " (nth height current-stack)) '())
+      ((null destination-stack) t)
+      ((>= height destination-stack-size) '())
+      ((> (+ (- current-stack-size height) destination-stack-size) *stack-size*) '())
+      (t t))))
+
+;; ((curr-row curr-column) (dest-row dest-column) height)
+(defun parse-move (move)
+  (cond ((not (listp move)) '())
+    ((not (or (= (length move) *list-size*) (= (length move) (1- *list-size*)))) '())
+    ((not (parse-row-column-list (first move))) '())
+    ((not (parse-row-column-list (first (rest move)))) '())
+    ((= (length move) *list-size*) (characterp (first (rest (rest move)))))
+    (t t)))
+
+(defun parse-row-column-list (elements)
+   (if (listp elements) (if (= (length elements) (1- *list-size*)) (is-first-char-and-second-number elements) '()) '()))
+
+(defun is-first-char-and-second-number (elements)
+  (if (and (and (symbolp (first elements)) (= 1 (length (symbol-name (first elements)))))  (numberp (first (rest elements)))) t '()))
+
+(defun read-move (player)
+  (let ((move))
+  (format t (if (equal player 'X) "Player X: " "Player O: "))
+  (setf move (read))
+  (if (parse-move move) move (progn (format t "Invalid format!~%Hint: ((curr-row curr-column) (dest-row dest-column) height) where 'height' is optional~%") (read-move player)))))
+
+(defun check-move (row column dest-row dest-column size board player height)
+  (cond ((or (null row) (null dest-row)) '())
+      ((not (check-index row column size)) '())
+      ((not (check-index dest-row dest-column size)) '())
+      ((not (even-sum row column)) '())
+      ((not (even-sum dest-row dest-column)) '())
+      ((not (= (calc-distance row column dest-row dest-column) 1)) '())
+      ((not (check-if-move-leads-to-nearest-stack dest-row dest-column (find-distance 0 0 size '() row column board))) '())
+      ((not (check-stacks-move (get-stack-from-index row column board size) (get-stack-from-index dest-row dest-column board size) player height)) '())
+      (t t)))
+
+(defun get-stack-from-index (row column board size)
+  (nth (1- *list-size*) (nth (+ (* row size) column) board)))
+
+(defun make-a-move (game)
+  (let* ((move (read-move (game-player game)))
+    (row (char-to-row-index (first (first move))))
+    (column (1- (first (rest (first move)))))
+    (dest-row (char-to-row-index (first (first (rest move)))))
+    (dest-column (1- (first (rest (first (rest move))))))
+    (height (if (= (length move) *list-size*) (first (rest (rest move))) 0)))
+    (cond ((not (check-move row column dest-row dest-column (game-size game) (game-board game) (game-player game) height)) '())
+    (t (play-move row column dest-row dest-column (game-board game) (game-size game) height)))))
+
+;; for now it directly changes the state of the board
+(defun play-move (row column dest-row dest-column board size height)
+ (let ((current-stack (get-stack-from-index row column board size)) (destination-stack (get-stack-from-index dest-row dest-column board size)))
+   (setf (nth (1- *list-size*) (nth (+ (* dest-row size) dest-column) board)) (if (null destination-stack) (cons (subseq current-stack height) destination-stack) (append destination-stack (subseq current-stack height))))
+   (setf (nth (1- *list-size*) (nth (+ (* row size) column) board)) (delete-if (constantly t) current-stack :count (- (length current-stack) height) :from-end t))))
+
+;; will be used to controll the course of the game
+;; for now it allows only one move to be played and then exits
+(defun game-controller (game)
+  (make-a-move game)
+  (display-game-board (game-board game) (game-size game))
+  (display-game-over (game-points-x game) (game-points-o game))
+  ;;(if (check-if-game-over (game)) (display-game-over (game-points-x game) (game-points-o game)) (game-controller game))
+  )
+
+(defun display-game-over (points-x points-o)
+  (format t "Game over!~%Final score:~%Player X   ~a - ~a   Player O~%" points-x points-o))
