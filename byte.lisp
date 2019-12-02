@@ -39,7 +39,7 @@
   (setf (game-win-condition game) (if (= *standard-size* (game-size game)) *win-condition* *international-win-condition*)))
 
 (defun init-game (game)
-  (format t "Enter either ~a for (~a x ~a( or ~a for (~a x ~a) board size~%" *standard-size* *standard-size* *standard-size* *international-size* *international-size* *international-size*)
+  (format t "Enter either ~a for (~a x ~a) or ~a for (~a x ~a) board size~%" *standard-size* *standard-size* *standard-size* *international-size* *international-size* *international-size*)
   (format t "Board size: ")
   (setf (game-size game) (read-size-check))
   (format t "Enter either h (human) or p (PC) to select who plays first~%")
@@ -194,7 +194,7 @@
     (cond ((null current-stack) '())
       ((or (< height 0) (> height current-stack-size)) '())
       ((not (equal (nth height current-stack) current-player)) '())
-      ((null destination-stack) t)
+      ((and (null destination-stack) (= height 0)) t)
       ((>= height destination-stack-size) '())
       ((> (+ (- current-stack-size height) destination-stack-size) *stack-size*) '())
       (t t))))
@@ -240,15 +240,56 @@
     (column (1- (first (rest (first move)))))
     (dest-row (char-to-row-index (first (first (rest move)))))
     (dest-column (1- (first (rest (first (rest move))))))
-    (height (if (= (length move) *list-size*) (first (rest (rest move))) 0)))
-    (cond ((not (check-move row column dest-row dest-column (game-size game) (game-board game) (game-player game) height)) '())
-    (t (play-move row column dest-row dest-column (game-board game) (game-size game) height) t))))
+    (height (if (= (length move) *list-size*) (first (rest (rest move))) 0))
+    (states (all-possible-states row column (game-size game) (game-board game) (game-player game)))
+    (found-state (find-state dest-row dest-column height states)))
+    (cond ((null found-state) '())
+    (t (setf (game-board game) found-state) t))))
+
+;;(defun change-state (board new-board)
+;;  (setf board new-board))
+
+;; go through possible states and return the one that corresponds to the given move
+(defun find-state (row column height states)
+(cond ((null states) '())
+((move-equal-to-state row column height (first states)) (nth (1- *list-size*) (first states)))
+(t (find-state row column height (rest states)))))
+
+(defun move-equal-to-state (row column height state)
+  (and (equal (list row column) (first state)) (= height (first (rest state)))))
+
+(defun all-possible-states (row column size board player)
+  (append (all-possible-states-from-one-square-to-another row column (1- row) (1- column) size board player 0) ; left diagonal up
+  (all-possible-states-from-one-square-to-another row column (1+ row) (1- column) size board player 0) ; left diagonal down
+  (all-possible-states-from-one-square-to-another row column (1- row) (1+ column) size board player 0) ; right diagonal up
+  (all-possible-states-from-one-square-to-another row column (1+ row) (1+ column) size board player 0) ; right diagonal down
+  ))
+
+;; format (((row column) height board-state) ...)
+(defun all-possible-states-from-one-square-to-another (row column dest-row dest-column size board player height)
+  (cond ((= height *stack-size*) '())
+  ((check-move row column dest-row dest-column size board player height) (cons (list (list dest-row dest-column) height (play-move row column dest-row dest-column board size height)) (all-possible-states-from-one-square-to-another row column dest-row dest-column size board player (1+ height))))
+  (t (all-possible-states-from-one-square-to-another row column dest-row dest-column size board player (1+ height)))))  
 
 ;; for now it directly changes the state of the board
+;;(defun play-move (row column dest-row dest-column board size height)
+;; (let ((current-stack (get-stack-from-index row column board size)) (destination-stack (get-stack-from-index dest-row dest-column board size))) 
+;;   (setf (nth (1- *list-size*) (nth (+ (* dest-row size) dest-column) table)) (if (null destination-stack) (cons (subseq current-stack height) destination-stack) (append destination-stack (subseq current-stack height))))
+;;  (setf (nth (1- *list-size*) (nth (+ (* row size) column) table)) (delete-if (constantly t) current-stack :count (- (length current-stack) height) :from-end t))))
+
+;; from the current state of the table return new state on the table after playing a given move
 (defun play-move (row column dest-row dest-column board size height)
- (let ((current-stack (get-stack-from-index row column board size)) (destination-stack (get-stack-from-index dest-row dest-column board size)))
-   (setf (nth (1- *list-size*) (nth (+ (* dest-row size) dest-column) board)) (if (null destination-stack) (cons (subseq current-stack height) destination-stack) (append destination-stack (subseq current-stack height))))
-   (setf (nth (1- *list-size*) (nth (+ (* row size) column) board)) (delete-if (constantly t) current-stack :count (- (length current-stack) height) :from-end t))))
+ (let ((current-stack (get-stack-from-index row column board size)) (destination-stack (get-stack-from-index dest-row dest-column board size))) 
+  (play-move-helper 0 0 size row column (remove-if (constantly t) current-stack :count (- (length current-stack) height) :from-end t) dest-row dest-column (if (null destination-stack) (append (subseq current-stack height) destination-stack) (append destination-stack (subseq current-stack height))) board)))
+
+;;(defun play-move (row column dest-row dest-column board size height)
+;; (let ((current-stack (get-stack-from-index row column board size)) (destination-stack (get-stack-from-index dest-row dest-column board size))) 
+;;  (setf (game-board *byte-game*)(play-move-helper 0 0 size row column (delete-if (constantly t) current-stack :count (- (length current-stack) height) :from-end t) dest-row dest-column (if (null destination-stack) (cons (subseq current-stack height) destination-stack) (append destination-stack (subseq current-stack height))) board))))
+
+(defun play-move-helper (row column size curr-row curr-column curr-stack dest-row dest-column dest-stack board)
+    (cond ((= row size) '())
+          ((= column size) (play-move-helper (1+ row) 0 size curr-row curr-column curr-stack dest-row dest-column dest-stack board))
+          (t (cons (if (and (= row curr-row) (= column curr-column)) (make-square row column (if (even-sum row column) 'X 'O) curr-stack) (if (and (= row dest-row) (= column dest-column)) (make-square row column (if (even-sum row column) 'X 'O) dest-stack) (first board))) (play-move-helper row (1+ column) size curr-row curr-column curr-stack dest-row dest-column dest-stack (rest board))))))
 
 (defun make-a-move-loop (game)
   (if (null (make-a-move game)) (progn (format t "Invalid move! Try again!~%") (make-a-move-loop game)) t))
@@ -257,10 +298,25 @@
 ;; for now it allows only one move to be played and then exits
 (defun game-controller (game)
   (make-a-move-loop game)
+  (remove-full-stacks-and-update-score (game-size game) (game-board game) game)
   (display-game-board (game-board game) (game-size game))
-  (display-game-over (game-points-x game) (game-points-o game))
-  ;;(if (check-if-game-over (game)) (display-game-over (game-points-x game) (game-points-o game)) (game-controller game))
-  )
+  ;(display-game-over (game-points-x game) (game-points-o game))
+  ;(change-player (game-player game))
+  (if (equal (game-player game) 'X) (setf (game-player game) 'O) (setf (game-player game) 'X))
+  (if (check-if-game-over game) (display-game-over (game-points-x game) (game-points-o game)) (game-controller game)))
+
+(defun find-full-stack (row column size board)
+  (cond ((= row size) '())
+  ((= column size) (find-full-stack (1+ row) 0 size board))
+  (t (if (= (length (nth (1- *list-size*) (nth (+ (* row size) column) board))) *stack-size*) (list row column) (find-full-stack row (1+ column) size board)))))
+
+(defun remove-full-stacks-and-update-score (size board game)
+  (let ((stack (find-full-stack 0 0 size board)))
+  (if (not (null stack)) (progn (if (equal (last (get-stack-from-index (first stack) (first (rest stack)) board size)) 'X) (setf (game-points-x game) (1+ (game-points-x game))) (setf (game-points-o game) (1+ (game-points-o game))))
+  (setf (nth (1- *list-size*) (nth (+ (* (first stack) size) (first (rest stack))) board)) '())))))
+
+;;(defun change-player (player)
+;; (if (equal player 'X) (setf player 'O) (setf player 'X)))
 
 (defun display-game-over (points-x points-o)
   (format t "Game over!~%Final score:~%Player X   ~a - ~a   Player O~%" points-x points-o))
