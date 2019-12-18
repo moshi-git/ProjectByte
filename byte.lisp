@@ -31,6 +31,8 @@
 
 (defconstant *international-size* 10)
 
+(defconstant *max-depth* 3)
+
 ; check if either player reached win condition (8 x 8 - won two stacks, 10 x 10 - won three stacks)
 (defun check-if-game-over(game)
   (if (or (= (game-win-condition game) (game-points-o game)) (= (game-win-condition game) (game-points-x game))) t nil))
@@ -269,21 +271,21 @@
 (defun all-possible-states-from-one-square-to-another (row column dest-row dest-column size board player height)
   (cond ((= height *stack-size*) '())
   ((check-move row column dest-row dest-column size board player height) (cons (list (list dest-row dest-column) height (play-move row column dest-row dest-column board size height)) (all-possible-states-from-one-square-to-another row column dest-row dest-column size board player (1+ height))))
-  (t (all-possible-states-from-one-square-to-another row column dest-row dest-column size board player (1+ height)))))  
+  (t (all-possible-states-from-one-square-to-another row column dest-row dest-column size board player (1+ height)))))
 
 ;; for now it directly changes the state of the board
 ;;(defun play-move (row column dest-row dest-column board size height)
-;; (let ((current-stack (get-stack-from-index row column board size)) (destination-stack (get-stack-from-index dest-row dest-column board size))) 
+;; (let ((current-stack (get-stack-from-index row column board size)) (destination-stack (get-stack-from-index dest-row dest-column board size)))
 ;;   (setf (nth (1- *list-size*) (nth (+ (* dest-row size) dest-column) table)) (if (null destination-stack) (cons (subseq current-stack height) destination-stack) (append destination-stack (subseq current-stack height))))
 ;;  (setf (nth (1- *list-size*) (nth (+ (* row size) column) table)) (delete-if (constantly t) current-stack :count (- (length current-stack) height) :from-end t))))
 
 ;; from the current state of the table return new state on the table after playing a given move
 (defun play-move (row column dest-row dest-column board size height)
- (let ((current-stack (get-stack-from-index row column board size)) (destination-stack (get-stack-from-index dest-row dest-column board size))) 
+ (let ((current-stack (get-stack-from-index row column board size)) (destination-stack (get-stack-from-index dest-row dest-column board size)))
   (play-move-helper 0 0 size row column (remove-if (constantly t) current-stack :count (- (length current-stack) height) :from-end t) dest-row dest-column (if (null destination-stack) (append (subseq current-stack height) destination-stack) (append destination-stack (subseq current-stack height))) board)))
 
 ;;(defun play-move (row column dest-row dest-column board size height)
-;; (let ((current-stack (get-stack-from-index row column board size)) (destination-stack (get-stack-from-index dest-row dest-column board size))) 
+;; (let ((current-stack (get-stack-from-index row column board size)) (destination-stack (get-stack-from-index dest-row dest-column board size)))
 ;;  (setf (game-board *byte-game*)(play-move-helper 0 0 size row column (delete-if (constantly t) current-stack :count (- (length current-stack) height) :from-end t) dest-row dest-column (if (null destination-stack) (cons (subseq current-stack height) destination-stack) (append destination-stack (subseq current-stack height))) board))))
 
 (defun play-move-helper (row column size curr-row curr-column curr-stack dest-row dest-column dest-stack board)
@@ -295,15 +297,38 @@
   (if (null (make-a-move game)) (progn (format t "Invalid move! Try again!~%") (make-a-move-loop game)) t))
 
 ;; will be used to controll the course of the game
-;; for now it allows only one move to be played and then exits
 (defun game-controller (game)
-  (make-a-move-loop game)
+ ;;;;;;(if (equal (game-first-player game) 'h) (if (equal (game-player game) 'X) (make-a-move-loop game) (play-minmax game (game-board game) 2 (game-player game) (game-size game))) (if (equal (game-player game) 'X) (play-minmax game (game-board game) 2 (game-player game) (game-size game)) (make-a-move-loop game)))
+  ;;(make-a-move-loop game)
+  (play-minmax game (game-board game) 20 (game-player game) (game-size game))
   (remove-full-stacks-and-update-score (game-size game) (game-board game) game)
   (display-game-board (game-board game) (game-size game))
-  ;(display-game-over (game-points-x game) (game-points-o game))
-  ;(change-player (game-player game))
   (if (equal (game-player game) 'X) (setf (game-player game) 'O) (setf (game-player game) 'X))
-  (if (check-if-game-over game) (display-game-over (game-points-x game) (game-points-o game)) (game-controller game)))
+  (if (check-if-game-over game) (display-game-over (game-points-x game) (game-points-o game)) (game-controller game))
+  )
+
+
+(defun play-minmax (game state depth player size)
+  (let ((new-state (minmax-best-move state depth player size)))
+  (setf (game-board game) (first (rest (rest (rest (rest new-state))))) )))
+
+;; format ((curr-row curr-column) (dest-row dest-column) height board-state eval-value)
+(defun minmax-best-move (state depth player size)
+  (minmax-best-move-helper 0 0 size state depth player '()))
+
+(defun minmax-best-move-helper (row column size state depth player best-move)
+  (cond ((= row size) (reduce (lambda (a b) (if (> (first (rest a)) (first (rest b)) ) a b)) best-move) )
+    ((= column size) (minmax-best-move-helper (1+ row) 0 size state depth player best-move))
+    ((null (nth (1- *list-size*) (nth (+ (* row size) column) state))) (minmax-best-move-helper row (if (= 0 (mod row 2)) (+ column 2) (1+ column)) size state depth player best-move))
+    (t (let ((best-move-state (best-move-from-current-square row column size state player depth))) (minmax-best-move-helper row (if (= 0 (mod row 2)) (+ column 2) (1+ column)) size state depth player (if (not (null best-move-state)) (cons best-move-state best-move) best-move) )))))
+
+(defun best-move-from-current-square (row column size state player depth)
+  (let* ((states (all-possible-states row column size state player)) (states-with-minmax-value (best-move-from-current-square-minmax-values states size state player depth)))
+    (if (null states) '() (cons (list row column) (reduce (lambda (a b) (if (> (first a) (first b) ) a b)) states-with-minmax-value)))))
+
+(defun best-move-from-current-square-minmax-values (states size state player depth)
+  (cond ((null states) '())
+    (t (cons (cons (first (rest (minmax (first (rest (rest states))) depth player size t))) (first states) ) (best-move-from-current-square-minmax-values (rest states) size state player depth)))))
 
 (defun find-full-stack (row column size board)
   (cond ((= row size) '())
@@ -315,8 +340,54 @@
   (if (not (null stack)) (progn (if (equal (last (get-stack-from-index (first stack) (first (rest stack)) board size)) 'X) (setf (game-points-x game) (1+ (game-points-x game))) (setf (game-points-o game) (1+ (game-points-o game))))
   (setf (nth (1- *list-size*) (nth (+ (* (first stack) size) (first (rest stack))) board)) '())))))
 
-;;(defun change-player (player)
-;; (if (equal player 'X) (setf player 'O) (setf player 'X)))
-
 (defun display-game-over (points-x points-o)
   (format t "Game over!~%Final score:~%Player X   ~a - ~a   Player O~%" points-x points-o))
+
+;; states for all legal moves that can be played from the current state
+(defun new-states (state size player)
+  (new-states-helper 0 0 size state '() player))
+
+(defun new-states-helper (row column size state result player)
+    (cond ((= row size) result)
+        ((= column size) (new-states-helper (1+ row) 0 size state result player))
+        ((null (nth (1- *list-size*) (nth (+ (* row size) column) state))) (new-states-helper row (if (= 0 (mod row 2)) (+ column 2) (1+ column)) size state result player))
+        (t (new-states-helper row (if (= 0 (mod row 2)) (+ column 2) (1+ column)) size state (append (all-possible-states-minmax row column size state player) result) player))))
+
+;; for now random, to be changed later
+(defun evaluate-state (state)
+  (random 100))
+
+(defun sort-min (a b)
+  (< (first (rest a)) (first (rest b))))
+
+(defun min-state (states)
+ (first (sort states #'sort-min)))
+
+(defun sort-max (a b)
+  (> (first (rest a)) (first (rest b))))
+
+(defun max-state (states)
+  (first (sort states #'sort-max)))
+
+;; format ((board-state) ...)
+;; same function as all-possible-states but different format for the result list
+(defun all-possible-states-minmax (row column size board player)
+    (append (all-possible-states-from-one-square-to-another-minmax row column (1- row) (1- column) size board player 0) ; left diagonal up
+    (all-possible-states-from-one-square-to-another-minmax row column (1+ row) (1- column) size board player 0) ; left diagonal down
+    (all-possible-states-from-one-square-to-another-minmax row column (1- row) (1+ column) size board player 0) ; right diagonal up
+    (all-possible-states-from-one-square-to-another-minmax row column (1+ row) (1+ column) size board player 0) ; right diagonal down
+    ))
+
+;; format ((board-state) ...)
+;; same function as all-possible-states-from-one-square-to-another but different format for the result list
+(defun all-possible-states-from-one-square-to-another-minmax (row column dest-row dest-column size board player height)
+    (cond ((= height *stack-size*) '())
+    ((check-move row column dest-row dest-column size board player height) (cons (play-move row column dest-row dest-column board size height) (all-possible-states-from-one-square-to-another-minmax row column dest-row dest-column size board player (1+ height))))
+    (t (all-possible-states-from-one-square-to-another-minmax row column dest-row dest-column size board player (1+ height)))))
+
+;; state list format - ((board-state) ...)
+;; move - t for pc, move - nil for h
+(defun minmax (state depth player size move)
+  (let ((state-list (new-states state size player)) (fun-max-or-min (if move 'max-state 'min-state)))
+    (cond ((or (= 0 depth) (null state-list)) (list state (evaluate-state state)))
+          (t (apply fun-max-or-min (list (mapcar (lambda (x) (minmax x (1- depth) (if (equal player 'X) 'O 'X) size (not move))) state-list)))))))
