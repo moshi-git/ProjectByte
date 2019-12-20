@@ -3,6 +3,8 @@
 ;; forbidden use of car and cdr
 ;; use first and rest instead
 
+(declaim (optimize (speed 3)))
+
 (defstruct game
   size ; 8x8 or 10x10
   ; instead of using array for faster access
@@ -32,6 +34,10 @@
 (defconstant *international-size* 10)
 
 (defconstant *max-depth* 1)
+
+(defconstant *min-inf* most-negative-fixnum) ;; -1152921504606846976 platform dependent
+
+(defconstant *plus-inf* most-positive-fixnum) ;; 1152921504606846975 platform dependent
 
 ; check if either player reached win condition (8 x 8 - won two stacks, 10 x 10 - won three stacks)
 (defun check-if-game-over(game)
@@ -288,10 +294,16 @@
 ;; (let ((current-stack (get-stack-from-index row column board size)) (destination-stack (get-stack-from-index dest-row dest-column board size)))
 ;;  (setf (game-board *byte-game*)(play-move-helper 0 0 size row column (delete-if (constantly t) current-stack :count (- (length current-stack) height) :from-end t) dest-row dest-column (if (null destination-stack) (cons (subseq current-stack height) destination-stack) (append destination-stack (subseq current-stack height))) board))))
 
+;(defun play-move-helper (row column size curr-row curr-column curr-stack dest-row dest-column dest-stack board)
+;    (cond ((= row size) '())
+;          ((= column size) (play-move-helper (1+ row) 0 size curr-row curr-column curr-stack dest-row dest-column dest-stack board))
+;          (t (cons (if (and (= row curr-row) (= column curr-column)) (make-square row column (if (even-sum row column) 'X 'O) curr-stack) (if (and (= row dest-row) (= column dest-column)) (make-square row column (if (even-sum row column) 'X 'O) dest-stack) (first board))) (play-move-helper row (1+ column) size curr-row curr-column curr-stack dest-row dest-column dest-stack (rest board))))))
+
 (defun play-move-helper (row column size curr-row curr-column curr-stack dest-row dest-column dest-stack board)
-    (cond ((= row size) '())
-          ((= column size) (play-move-helper (1+ row) 0 size curr-row curr-column curr-stack dest-row dest-column dest-stack board))
-          (t (cons (if (and (= row curr-row) (= column curr-column)) (make-square row column (if (even-sum row column) 'X 'O) curr-stack) (if (and (= row dest-row) (= column dest-column)) (make-square row column (if (even-sum row column) 'X 'O) dest-stack) (first board))) (play-move-helper row (1+ column) size curr-row curr-column curr-stack dest-row dest-column dest-stack (rest board))))))
+  (let ((new-board (copy-list board)))
+    (setf (nth (+ (* curr-row size) curr-column) new-board) (make-square curr-row curr-column (if (even-sum row column) 'X 'O) curr-stack))
+    (setf (nth (+ (* dest-row size) dest-column) new-board) (make-square curr-row curr-column (if (even-sum row column) 'X 'O) dest-stack))
+      new-board))
 
 (defun make-a-move-loop (game)
   (if (null (make-a-move game)) (progn (format t "Invalid move! Try again!~%") (make-a-move-loop game)) t))
@@ -309,7 +321,7 @@
 
 
 (defun play-minmax (game state depth player size)
-  (let ((new-state (minmax-best-move state depth player size)))
+  (let ((new-state (minmax-best-move state depth (if (equal player 'X) 'O 'X) size)))
   (setf (game-board game) (first (rest (rest (rest (rest new-state))))) )))
 
 ;; format ((curr-row curr-column) (dest-row dest-column) height board-state eval-value)
@@ -328,7 +340,8 @@
 
 (defun best-move-from-current-square-minmax-values (states size player depth)
   (cond ((null states) '())
-    (t (cons (cons (first (rest (minmax (first (rest (rest (first states)))) depth player size t))) (first states) ) (best-move-from-current-square-minmax-values (rest states) size player depth)))))
+                                                                            ;; check out the rest of the moves
+    (t (cons (cons (minmax (first (rest (rest (first states)))) depth player size '() *min-inf* *plus-inf* ) (first states) ) (best-move-from-current-square-minmax-values (rest states) size player depth)))))
 
 (defun find-full-stack (row column size board)
   (cond ((= row size) '())
@@ -357,18 +370,6 @@
 (defun evaluate-state (state)
   (random 100))
 
-(defun sort-min (a b)
-  (< (first (rest a)) (first (rest b))))
-
-(defun min-state (states)
- (first (sort states #'sort-min)))
-
-(defun sort-max (a b)
-  (> (first (rest a)) (first (rest b))))
-
-(defun max-state (states)
-  (first (sort states #'sort-max)))
-
 ;; format ((board-state) ...)
 ;; same function as all-possible-states but different format for the result list
 (defun all-possible-states-minmax (row column size board player)
@@ -385,9 +386,26 @@
     ((check-move row column dest-row dest-column size board player height) (cons (play-move row column dest-row dest-column board size height) (all-possible-states-from-one-square-to-another-minmax row column dest-row dest-column size board player (1+ height))))
     (t (all-possible-states-from-one-square-to-another-minmax row column dest-row dest-column size board player (1+ height)))))
 
-;; state list format - ((board-state eval-value) ...)
+;; state list format - ((eval-value) ...)
 ;; move - t for pc, move - nil for h
-(defun minmax (state depth player size move)
-  (let ((state-list (new-states state size player)) (fun-max-or-min (if move 'max-state 'min-state)))
-    (cond ((or (= 0 depth) (null state-list)) (list state (evaluate-state state)))
-          (t (apply fun-max-or-min (list (mapcar (lambda (x) (minmax x (1- depth) (if (equal player 'X) 'O 'X) size (not move))) state-list)))))))
+(defun minmax (state depth player size move alpha beta)
+   (let ((state-list (new-states state size player)) )
+    (cond ((or (= 0 depth) (null state-list)) (evaluate-state state))
+      (t (if move (maximizing-node state-list depth (if (equal player 'X) 'O 'X) size (not move) alpha beta) (minimizing-node state-list depth (if (equal player 'X) 'O 'X) size (not move) alpha beta)) )
+      )))
+
+(defun maximizing-node (states depth player size move alpha beta)
+ (maximizing-node-helper states depth player size move alpha beta *min-inf*))
+
+(defun maximizing-node-helper (states depth player size move alpha beta max-eval)
+  (cond ((null states) max-eval)
+    (t (let* ((minmax-value (minmax (first states) (1- depth) player size move alpha beta)) (max-value (max max-eval minmax-value)) (alpha-value (max alpha minmax-value))) (if (<= beta alpha-value) max-value (maximizing-node-helper (rest states) depth player size move alpha-value beta max-value)))
+    )))
+
+(defun minimizing-node (states depth player size move alpha beta)
+    (minimizing-node-helper states depth player size move alpha beta *plus-inf*))
+
+(defun minimizing-node-helper (states depth player size move alpha beta min-eval)
+    (cond ((null states) min-eval)
+      (t (let* ((minmax-value (minmax (first states) (1- depth) player size move alpha beta)) (min-value (min min-eval minmax-value)) (beta-value (min beta minmax-value))) (if (<= beta-value alpha) min-value (minimizing-node-helper (rest states) depth player size move alpha beta-value min-value)))
+      )))
