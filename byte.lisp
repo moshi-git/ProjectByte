@@ -340,9 +340,9 @@
 
 ;; will be used to controll the course of the game
 (defun game-controller (game)
- ;;;;;;(if (equal (game-first-player game) 'h) (if (equal (game-player game) 'X) (make-a-move-loop game) (play-minmax game (game-board game) 2 (game-player game) (game-size game))) (if (equal (game-player game) 'X) (play-minmax game (game-board game) 2 (game-player game) (game-size game)) (make-a-move-loop game)))
+  (if (equal (game-first-player game) 'h) (if (equal (game-player game) 'X) (make-a-move-loop game) (play-minmax game (game-board game) *max-depth* (game-player game) (game-size game))) (if (equal (game-player game) 'X) (play-minmax game (game-board game) *max-depth* (game-player game) (game-size game)) (make-a-move-loop game)))
   ;;(make-a-move-loop game)
-  (play-minmax game (game-board game) *max-depth* (game-player game) (game-size game))
+  ;(play-minmax game (game-board game) *max-depth* (game-player game) (game-size game))
   (remove-full-stacks-and-update-score (game-size game) (game-board game) game)
   (display-game-board (game-board game) (game-size game))
   (if (equal (game-player game) 'X) (setf (game-player game) 'O) (setf (game-player game) 'X))
@@ -448,8 +448,14 @@
 (defun minmax (state depth player size move alpha beta)
    (let ((state-list (new-states state size player)) )
     (cond ((or (= 0 depth) (null state-list)) (evaluate-state state))
-      (t (if move (maximizing-node state-list depth (if (equal player 'X) 'O 'X) size (not move) alpha beta) (minimizing-node state-list depth (if (equal player 'X) 'O 'X) size (not move) alpha beta)) )
+      (t (if move (maximizing-node (sort-max state-list) depth (if (equal player 'X) 'O 'X) size (not move) alpha beta) (minimizing-node (sort-min state-list) depth (if (equal player 'X) 'O 'X) size (not move) alpha beta)) )
       )))
+
+(defun sort-max (states)
+  (sort states (lambda (a b) (> (evaluate-state a) (evaluate-state b)) )) )
+
+(defun sort-min (states)
+  (sort states (lambda (a b) (< (evaluate-state a) (evaluate-state b)) )))
 
 (defun maximizing-node (states depth player size move alpha beta)
  (maximizing-node-helper states depth player size move alpha beta *min-inf*))
