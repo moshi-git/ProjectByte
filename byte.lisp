@@ -33,7 +33,7 @@
 
 (defconstant *international-size* 10)
 
-(defconstant *max-depth* 1)
+(defconstant *max-depth* 2)
 
 (defconstant *min-inf* most-negative-fixnum) ;; -1152921504606846976 platform dependent
 
@@ -274,11 +274,11 @@
   (all-possible-states-from-one-square-to-another row column (1+ row) (1+ column) size board player 0) ; right diagonal down
   ))
 
-(defun all-possible-states-hash (row column size board player hash)
-  (append (all-possible-states-from-one-square-to-another-hash row column (1- row) (1- column) size board player 0 hash) ; left diagonal up
-  (all-possible-states-from-one-square-to-another-hash row column (1+ row) (1- column) size board player 0 hash) ; left diagonal down
-  (all-possible-states-from-one-square-to-another-hash row column (1- row) (1+ column) size board player 0 hash) ; right diagonal up
-  (all-possible-states-from-one-square-to-another-hash row column (1+ row) (1+ column) size board player 0 hash) ; right diagonal down
+(defun all-possible-states-hash (row column size board player hash dist-hash)
+  (append (all-possible-states-from-one-square-to-another-hash row column (1- row) (1- column) size board player 0 hash dist-hash) ; left diagonal up
+  (all-possible-states-from-one-square-to-another-hash row column (1+ row) (1- column) size board player 0 hash dist-hash) ; left diagonal down
+  (all-possible-states-from-one-square-to-another-hash row column (1- row) (1+ column) size board player 0 hash dist-hash) ; right diagonal up
+  (all-possible-states-from-one-square-to-another-hash row column (1+ row) (1+ column) size board player 0 hash dist-hash) ; right diagonal down
   ))
 
 ;; format (((row column) height board-state) ...)
@@ -287,10 +287,10 @@
   ((check-move row column dest-row dest-column size board player height) (cons (list (list dest-row dest-column) height (play-move row column dest-row dest-column board size height)) (all-possible-states-from-one-square-to-another row column dest-row dest-column size board player (1+ height))))
   (t (all-possible-states-from-one-square-to-another row column dest-row dest-column size board player (1+ height)))))
 
-(defun all-possible-states-from-one-square-to-another-hash (row column dest-row dest-column size board player height hash)
+(defun all-possible-states-from-one-square-to-another-hash (row column dest-row dest-column size board player height hash dist-hash)
   (cond ((= height *stack-size*) '())
-  ((check-move-hash row column dest-row dest-column size board player height hash) (cons (list (list dest-row dest-column) height (play-move-hash row column dest-row dest-column board size height hash)) (all-possible-states-from-one-square-to-another-hash row column dest-row dest-column size board player (1+ height) hash)))
-  (t (all-possible-states-from-one-square-to-another-hash row column dest-row dest-column size board player (1+ height) hash))))
+  ((check-move-hash row column dest-row dest-column size board player height hash dist-hash) (cons (list (list dest-row dest-column) height (play-move-hash row column dest-row dest-column board size height hash)) (all-possible-states-from-one-square-to-another-hash row column dest-row dest-column size board player (1+ height) hash dist-hash)))
+  (t (all-possible-states-from-one-square-to-another-hash row column dest-row dest-column size board player (1+ height) hash dist-hash))))
 
 ;; for now it directly changes the state of the board
 ;;(defun play-move (row column dest-row dest-column board size height)
@@ -340,9 +340,9 @@
 
 ;; will be used to controll the course of the game
 (defun game-controller (game)
-  (if (equal (game-first-player game) 'h) (if (equal (game-player game) 'X) (make-a-move-loop game) (play-minmax game (game-board game) *max-depth* (game-player game) (game-size game))) (if (equal (game-player game) 'X) (play-minmax game (game-board game) *max-depth* (game-player game) (game-size game)) (make-a-move-loop game)))
+  ;;;;(if (equal (game-first-player game) 'h) (if (equal (game-player game) 'X) (make-a-move-loop game) (play-minmax game (game-board game) *max-depth* (game-player game) (game-size game))) (if (equal (game-player game) 'X) (play-minmax game (game-board game) *max-depth* (game-player game) (game-size game)) (make-a-move-loop game)))
   ;;(make-a-move-loop game)
-  ;(play-minmax game (game-board game) *max-depth* (game-player game) (game-size game))
+  (play-minmax game (game-board game) *max-depth* (game-player game) (game-size game))
   (remove-full-stacks-and-update-score (game-size game) (game-board game) game)
   (display-game-board (game-board game) (game-size game))
   (if (equal (game-player game) 'X) (setf (game-player game) 'O) (setf (game-player game) 'X))
@@ -357,19 +357,19 @@
 ;; format ((curr-row curr-column) (dest-row dest-column) height board-state eval-value)
 (defun minmax-best-move (state depth player size)
   ;(minmax-best-move-helper 0 0 size state state (copy-list state) depth player '()))
- (let ((board-hash (make-board-hash state size)))
-  (minmax-best-move-helper 0 0 size state depth player '() board-hash)))
+ (let ((board-hash (make-board-hash state size)) (dist-hash (make-distance-hash state size)))
+  (minmax-best-move-helper 0 0 size state depth player '() board-hash dist-hash)))
 
-(defun minmax-best-move-helper (row column size state depth player best-move hash)
+(defun minmax-best-move-helper (row column size state depth player best-move hash dist-hash)
     (cond ((= row size) (if (null best-move) (cons '(-1 -1) (cons '(*min-inf* *max-inf*) (cons '(-1 -1) (cons -1 (cons state '()))))) (reduce (lambda (a b) (if (> (first (rest a)) (first (rest b)) ) a b)) best-move)) )
-      ((= column size) (minmax-best-move-helper (1+ row) 0 size state depth player best-move hash))
+      ((= column size) (minmax-best-move-helper (1+ row) 0 size state depth player best-move hash dist-hash))
       ;((null (nth (1- *list-size*) (first state))) (minmax-best-move-helper row (+ column 2) size (rest (rest state)) full-state depth player best-move))
-      ((even-sum row column) (let ((best-move-state (best-move-from-current-square row column size state player depth hash))) (minmax-best-move-helper row (1+ column) size state depth player (if (not (null best-move-state)) (cons best-move-state best-move) best-move) hash )))
-      (t (minmax-best-move-helper row (1+ column) size state depth player best-move hash))))
+      ((even-sum row column) (let ((best-move-state (best-move-from-current-square row column size state player depth hash dist-hash))) (minmax-best-move-helper row (1+ column) size state depth player (if (not (null best-move-state)) (cons best-move-state best-move) best-move) hash dist-hash)))
+      (t (minmax-best-move-helper row (1+ column) size state depth player best-move hash dist-hash))))
 
 
-(defun best-move-from-current-square (row column size state player depth hash)
-  (let* ((states (all-possible-states-hash row column size state player hash)) (states-with-minmax-value (best-move-from-current-square-minmax-values states size player depth)))
+(defun best-move-from-current-square (row column size state player depth hash dist-hash)
+  (let* ((states (all-possible-states-hash row column size state player hash dist-hash)) (states-with-minmax-value (best-move-from-current-square-minmax-values states size player depth)))
     (if (null states) '() (cons (list row column) (reduce (lambda (a b) (if (> (first a) (first b) ) a b)) states-with-minmax-value)))))
 
 (defun best-move-from-current-square-minmax-values (states size player depth)
@@ -392,28 +392,28 @@
 
 ;; states for all legal moves that can be played from the current state
 (defun new-states (state size player)
- (let ((board-hash (make-board-hash state size)))
-  (new-states-helper 0 0 size state '() player board-hash)))
+ (let ((board-hash (make-board-hash state size)) (dist-hash (make-distance-hash state size)))
+  (new-states-helper 0 0 size state '() player board-hash dist-hash)))
 
-(defun new-states-helper (row column size state result player hash)
+(defun new-states-helper (row column size state result player hash dist-hash)
     (cond ((= row size) result)
-        ((= column size) (new-states-helper (1+ row) 0 size state result player hash))
+        ((= column size) (new-states-helper (1+ row) 0 size state result player hash dist-hash))
         ;((null (nth (1- *list-size*) (first state))) (new-states-helper row (+ column 2) size (rest (rest state)) result player))
-        ((even-sum row column) (new-states-helper row (1+ column) size state (append (all-possible-states-minmax row column size state player hash) result) player hash))
-        (t (new-states-helper row (1+ column) size state result player hash))))
+        ((even-sum row column) (new-states-helper row (1+ column) size state (append (all-possible-states-minmax row column size state player hash dist-hash) result) player hash dist-hash))
+        (t (new-states-helper row (1+ column) size state result player hash dist-hash))))
 
 ;; for now random, to be changed later
 (defun evaluate-state (state)
   (random 100))
 
-(defun check-move-hash (row column dest-row dest-column size board player height board-hash)
+(defun check-move-hash (row column dest-row dest-column size board player height board-hash dist-hash)
   (cond ((or (null row) (null dest-row)) '())
       ((not (check-index row column size)) '())
       ((not (check-index dest-row dest-column size)) '())
       ((not (even-sum row column)) '())
       ((not (even-sum dest-row dest-column)) '())
       ((not (= (calc-distance row column dest-row dest-column) 1)) '())
-      ((not (check-if-move-leads-to-nearest-stack dest-row dest-column (find-distance 0 0 size '() row column board))) '())
+      ((not (check-if-move-leads-to-nearest-stack dest-row dest-column (gethash (+ (* row size) column) dist-hash))) '())
       ((not (check-stacks-move (gethash (+ (* row size) column) board-hash) (gethash (+ (* dest-row size) dest-column) board-hash) player height)) '())
       (t t)))
 
@@ -426,22 +426,31 @@
     ((and (even-sum row column) (not (null (nth (1- *list-size*) (first board))))) (setf (gethash (+ (* row size) column) hash) (nth (1- *list-size*) (first board))) (make-board-hash-helper row (1+ column) size (rest board) hash)  )
     (t (make-board-hash-helper row (1+ column) size (rest board) hash))))
 
+(defun make-distance-hash (board size)
+    (let ((hash (make-hash-table))) (make-distance-hash-helper 0 0 size board hash)))
+
+(defun make-distance-hash-helper (row column size board hash)
+   (cond ((= row size) hash)
+      ((= column size) (make-distance-hash-helper (1+ row) 0 size board hash))
+      ((and (even-sum row column) (not (null (nth (1- *list-size*) (nth (+ (* row  size) column) board))))) (setf (gethash (+ (* row size) column) hash) (find-distance 0 0 size '() row column board)) (make-distance-hash-helper row (1+ column) size board hash)  )
+      (t (make-distance-hash-helper row (1+ column) size board hash))))
+
 ;; format ((board-state) ...)
 ;; same function as all-possible-states but different format for the result list
-(defun all-possible-states-minmax (row column size board player hash)
+(defun all-possible-states-minmax (row column size board player hash dist-hash)
 
-    (append (all-possible-states-from-one-square-to-another-minmax row column (1- row) (1- column) size board player 0 hash) ; left diagonal up
-    (all-possible-states-from-one-square-to-another-minmax row column (1+ row) (1- column) size board player 0 hash) ; left diagonal down
-    (all-possible-states-from-one-square-to-another-minmax row column (1- row) (1+ column) size board player 0 hash) ; right diagonal up
-    (all-possible-states-from-one-square-to-another-minmax row column (1+ row) (1+ column) size board player 0 hash) ; right diagonal down
+    (append (all-possible-states-from-one-square-to-another-minmax row column (1- row) (1- column) size board player 0 hash dist-hash) ; left diagonal up
+    (all-possible-states-from-one-square-to-another-minmax row column (1+ row) (1- column) size board player 0 hash dist-hash) ; left diagonal down
+    (all-possible-states-from-one-square-to-another-minmax row column (1- row) (1+ column) size board player 0 hash dist-hash) ; right diagonal up
+    (all-possible-states-from-one-square-to-another-minmax row column (1+ row) (1+ column) size board player 0 hash dist-hash) ; right diagonal down
     ))
 
 ;; format ((board-state) ...)
 ;; same function as all-possible-states-from-one-square-to-another but different format for the result list
-(defun all-possible-states-from-one-square-to-another-minmax (row column dest-row dest-column size board player height board-hash)
+(defun all-possible-states-from-one-square-to-another-minmax (row column dest-row dest-column size board player height board-hash dist-hash)
     (cond ((= height *stack-size*) '())
-    ((check-move-hash row column dest-row dest-column size board player height board-hash) (cons (play-move-hash row column dest-row dest-column board size height board-hash) (all-possible-states-from-one-square-to-another-minmax row column dest-row dest-column size board player (1+ height) board-hash)))
-    (t (all-possible-states-from-one-square-to-another-minmax row column dest-row dest-column size board player (1+ height) board-hash))))
+    ((check-move-hash row column dest-row dest-column size board player height board-hash dist-hash) (cons (play-move-hash row column dest-row dest-column board size height board-hash) (all-possible-states-from-one-square-to-another-minmax row column dest-row dest-column size board player (1+ height) board-hash dist-hash)))
+    (t (all-possible-states-from-one-square-to-another-minmax row column dest-row dest-column size board player (1+ height) board-hash dist-hash))))
 
 ;; state list format - ((eval-value) ...)
 ;; move - t for pc, move - nil for h
