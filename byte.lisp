@@ -336,7 +336,7 @@
 ;      new-board))
 
 (defun make-a-move-loop (game)
-  (if (have-stacks-to-move (game-board game) (game-size game) (game-player game)) (if (null (make-a-move game)) (progn (format t "Invalid move! Try again!~%") (make-a-move-loop game)) t) (format t "No available move! Skipping this turn!~%")))
+  (if (have-stacks-to-move (game-board game) (game-player game) (game-size game)) (if (null (make-a-move game)) (progn (format t "Invalid move! Try again!~%") (make-a-move-loop game)) t) (format t "No available move! Skipping this turn!~%")))
 
 (defun have-stacks-to-move (board player size)
    (let* ((board-hash (make-board-hash board size)) (dist-hash (make-distance-hash board size board-hash)))
@@ -351,8 +351,8 @@
 
 ;; will be used to controll the course of the game
 (defun game-controller (game)
-  ;;;;(human-or-pc game)
-  (play-minmax game (game-board game) +max-depth+ (game-player game) (game-size game) (if (equal (game-player game) 'X) t '()))
+  (human-or-pc game)
+  ;(play-minmax game (game-board game) +max-depth+ (game-player game) (game-size game) (if (equal (game-player game) 'X) t '()))
   (remove-full-stacks-and-update-score (game-size game) (game-board game) game)
   (display-game-board (game-board game) (game-size game))
   (if (equal (game-player game) 'X) (setf (game-player game) 'O) (setf (game-player game) 'X))
@@ -400,7 +400,7 @@
 
 (defun remove-full-stacks-and-update-score (size board game)
   (let ((stack (find-full-stack 0 0 size board)))
-  (if (not (null stack)) (progn (if (equal (last (get-stack-from-index (first stack) (first (rest stack)) board size)) 'X) (setf (game-points-x game) (1+ (game-points-x game))) (setf (game-points-o game) (1+ (game-points-o game))))
+  (if (not (null stack)) (progn (if (equal (nth (1- +stack-size+) (nth (1- +list-size+) (nth (+ (* (first stack) size) (first (rest stack))) board))) 'X) (setf (game-points-x game) (1+ (game-points-x game))) (setf (game-points-o game) (1+ (game-points-o game))))
   (setf (nth (1- +list-size+) (nth (+ (* (first stack) size) (first (rest stack))) board)) '())))))
 
 (defun display-game-over (points-x points-o)
